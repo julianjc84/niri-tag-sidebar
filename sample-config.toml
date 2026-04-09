@@ -1,0 +1,59 @@
+# niri-tag-sidebar sample configuration
+#
+# Each [[panel]] defines a slide-out drawer bound to a gesture tag.
+# The tag must match a `tag="..."` property on a gesture bind in your niri config.
+#
+# Matching niri config (in your touchscreen gestures block):
+#
+#   TouchEdgeLeft   tag="sidebar-left"   { noop; }
+#   TouchEdgeRight  tag="sidebar-right"  { noop; }
+#   TouchEdgeTop    tag="sidebar-top"    { noop; }
+#   TouchEdgeBottom tag="sidebar-bottom" { noop; }
+#
+# Available settings per panel:
+#   tag            - gesture tag to listen for (required)
+#   edge           - "left", "right", "top", "bottom" (required)
+#   size           - panel size in pixels (default: 300)
+#   snap_threshold - 0.0-1.0, progress needed to snap open (default: 0.5)
+#   bg_color       - CSS color string (default: "rgba(30, 30, 46, 0.85)")
+#   label          - text label shown in the panel (optional)
+#   start_open     - true/false (default: false)
+#   exclusive_zone - pixels to reserve, 0 = overlay (default: 0)
+#   layer          - "overlay" (above bars), "top" (same as bars),
+#                    "bottom", "background" (default: "overlay")
+
+[[panel]]
+tag = "sidebar-left"
+edge = "left"
+size = 400
+snap_threshold = 0.4
+bg_color = "rgba(40, 100, 220, 0.95)"
+label = "Navigation"
+layer = "overlay"
+
+[[panel]]
+tag = "sidebar-right"
+edge = "right"
+size = 400
+snap_threshold = 0.5
+bg_color = "rgba(220, 50, 50, 0.95)"
+label = "Quick Settings"
+layer = "overlay"
+
+[[panel]]
+tag = "sidebar-top"
+edge = "top"
+size = 250
+snap_threshold = 0.3
+bg_color = "rgba(50, 180, 80, 0.95)"
+label = "Notifications"
+layer = "overlay"
+
+[[panel]]
+tag = "sidebar-bottom"
+edge = "bottom"
+size = 300
+snap_threshold = 0.6
+bg_color = "rgba(220, 170, 30, 0.95)"
+label = "Media Controls"
+layer = "overlay"

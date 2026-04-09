@@ -1,0 +1,12 @@
+[package]
+name = "niri-tag-sidebar"
+version = "0.1.0"
+edition = "2024"
+description = "Proof-of-concept gesture-driven slide-out panels using niri IPC tags"
+
+[dependencies]
+gtk4 = "0.9"
+gtk4-layer-shell = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
