@@ -145,6 +145,12 @@ fn handle_gesture_msg(panels: &Rc<RefCell<HashMap<String, Panel>>>, msg: Gesture
                     panel.toggle();
                     panel.gesture_active = false;
                     panel.animate_to_target();
+                } else {
+                    // Drawer: continuous gesture — present the window so
+                    // Progress events can drive the reveal via set_reveal().
+                    if !panel.window.is_visible() {
+                        panel.window.present();
+                    }
                 }
             }
         }
@@ -154,6 +160,10 @@ fn handle_gesture_msg(panels: &Rc<RefCell<HashMap<String, Panel>>>, msg: Gesture
             delta_x: _,
             delta_y: _,
         } => {
+            eprintln!(
+                "[gesture] PROGRESS tag={} progress={:.3}",
+                tag, progress
+            );
             if let Some(panel) = panels.get_mut(&tag) {
                 if panel.gesture_active {
                     // Map progress to reveal.
@@ -176,10 +186,21 @@ fn handle_gesture_msg(panels: &Rc<RefCell<HashMap<String, Panel>>>, msg: Gesture
                     panel.gesture_active = false;
                     panel.hide_bar();
                 } else if panel.gesture_active {
-                    // Drawer: snap for continuous gestures only
+                    // Drawer: continuous gesture ended — snap to final state
+                    // without animation since the gesture already drove the reveal.
                     panel.gesture_active = false;
+                    let reveal_before = panel.reveal.get();
                     panel.snap();
-                    panel.animate_to_target();
+                    eprintln!(
+                        "[gesture] SNAP tag={} reveal={:.3} threshold={:.2} → {}",
+                        tag, reveal_before, panel.config.snap_threshold,
+                        if panel.is_open { "OPEN" } else { "CLOSED" },
+                    );
+                    let target = if panel.is_open { 1.0 } else { 0.0 };
+                    panel.set_reveal(target);
+                    if !panel.is_open {
+                        panel.window.set_visible(false);
+                    }
                 }
             }
         }
