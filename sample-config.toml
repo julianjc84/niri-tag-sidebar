@@ -3,17 +3,33 @@
 # Each [[panel]] defines a slide-out drawer bound to a gesture tag.
 # The tag must match a `tag="..."` property on a gesture bind in your niri config.
 #
-# Matching niri config (in your touchscreen gestures block):
+# This sample demonstrates the edge-zone feature — each of niri's four
+# touchscreen edges is split into three zones (thirds along the
+# perpendicular axis), and every zone gets its own differently-colored
+# drawer that occupies only that third of the screen.
 #
-#   TouchEdgeLeft   tag="sidebar-left"   { noop; }
-#   TouchEdgeRight  tag="sidebar-right"  { noop; }
-#   TouchEdgeTop    tag="sidebar-top"    { noop; }
-#   TouchEdgeBottom tag="sidebar-bottom" { noop; }
+# Matching niri config (in your binds block):
+#
+#   TouchEdgeTop:Left      tag="zone-top-left"      { noop; }
+#   TouchEdgeTop:Center    tag="zone-top-center"    { noop; }
+#   TouchEdgeTop:Right     tag="zone-top-right"     { noop; }
+#   TouchEdgeBottom:Left   tag="zone-bottom-left"   { noop; }
+#   TouchEdgeBottom:Center tag="zone-bottom-center" { noop; }
+#   TouchEdgeBottom:Right  tag="zone-bottom-right"  { noop; }
+#   TouchEdgeLeft:Top      tag="zone-left-top"      { noop; }
+#   TouchEdgeLeft:Center   tag="zone-left-center"   { noop; }
+#   TouchEdgeLeft:Bottom   tag="zone-left-bottom"   { noop; }
+#   TouchEdgeRight:Top     tag="zone-right-top"     { noop; }
+#   TouchEdgeRight:Center  tag="zone-right-center"  { noop; }
+#   TouchEdgeRight:Bottom  tag="zone-right-bottom"  { noop; }
 #
 # Available settings per panel:
 #   tag            - gesture tag to listen for (required)
 #   edge           - "left", "right", "top", "bottom" (required)
-#   size           - panel size in pixels (default: 300)
+#   zone           - "full" (default), "start", "center", "end"
+#                    For top/bottom: start=left, center=middle, end=right
+#                    For left/right: start=top,  center=middle, end=bottom
+#   size           - panel size in pixels perpendicular to the edge (default: 300)
 #   snap_threshold - 0.0-1.0, progress needed to snap open (default: 0.5)
 #   bg_color       - CSS color string (default: "rgba(30, 30, 46, 0.85)")
 #   label          - text label shown in the panel (optional)
@@ -22,38 +38,126 @@
 #   layer          - "overlay" (above bars), "top" (same as bars),
 #                    "bottom", "background" (default: "overlay")
 
-[[panel]]
-tag = "sidebar-left"
-edge = "left"
-size = 400
-snap_threshold = 0.4
-bg_color = "rgba(40, 100, 220, 0.95)"
-label = "Navigation"
-layer = "overlay"
+# -----------------------------------------------------------------------------
+# Top edge — 3 zones (thirds along x)
+# -----------------------------------------------------------------------------
 
 [[panel]]
-tag = "sidebar-right"
-edge = "right"
-size = 400
-snap_threshold = 0.5
-bg_color = "rgba(220, 50, 50, 0.95)"
-label = "Quick Settings"
-layer = "overlay"
-
-[[panel]]
-tag = "sidebar-top"
+tag = "zone-top-left"
 edge = "top"
-size = 250
-snap_threshold = 0.3
-bg_color = "rgba(50, 180, 80, 0.95)"
-label = "Notifications"
-layer = "overlay"
+zone = "start"
+size = 260
+snap_threshold = 0.4
+bg_color = "rgba(230, 80, 80, 0.95)"
+label = "Top · Left"
 
 [[panel]]
-tag = "sidebar-bottom"
+tag = "zone-top-center"
+edge = "top"
+zone = "center"
+size = 260
+snap_threshold = 0.4
+bg_color = "rgba(230, 160, 60, 0.95)"
+label = "Top · Center"
+
+[[panel]]
+tag = "zone-top-right"
+edge = "top"
+zone = "end"
+size = 260
+snap_threshold = 0.4
+bg_color = "rgba(230, 220, 80, 0.95)"
+label = "Top · Right"
+
+# -----------------------------------------------------------------------------
+# Bottom edge — 3 zones (thirds along x)
+# -----------------------------------------------------------------------------
+
+[[panel]]
+tag = "zone-bottom-left"
 edge = "bottom"
-size = 300
-snap_threshold = 0.6
-bg_color = "rgba(220, 170, 30, 0.95)"
-label = "Media Controls"
-layer = "overlay"
+zone = "start"
+size = 260
+snap_threshold = 0.4
+bg_color = "rgba(80, 200, 120, 0.95)"
+label = "Bottom · Left"
+
+[[panel]]
+tag = "zone-bottom-center"
+edge = "bottom"
+zone = "center"
+size = 260
+snap_threshold = 0.4
+bg_color = "rgba(60, 180, 200, 0.95)"
+label = "Bottom · Center"
+
+[[panel]]
+tag = "zone-bottom-right"
+edge = "bottom"
+zone = "end"
+size = 260
+snap_threshold = 0.4
+bg_color = "rgba(60, 120, 220, 0.95)"
+label = "Bottom · Right"
+
+# -----------------------------------------------------------------------------
+# Left edge — 3 zones (thirds along y)
+# -----------------------------------------------------------------------------
+
+[[panel]]
+tag = "zone-left-top"
+edge = "left"
+zone = "start"
+size = 340
+snap_threshold = 0.4
+bg_color = "rgba(150, 80, 220, 0.95)"
+label = "Left · Top"
+
+[[panel]]
+tag = "zone-left-center"
+edge = "left"
+zone = "center"
+size = 340
+snap_threshold = 0.4
+bg_color = "rgba(200, 80, 200, 0.95)"
+label = "Left · Center"
+
+[[panel]]
+tag = "zone-left-bottom"
+edge = "left"
+zone = "end"
+size = 340
+snap_threshold = 0.4
+bg_color = "rgba(220, 80, 150, 0.95)"
+label = "Left · Bottom"
+
+# -----------------------------------------------------------------------------
+# Right edge — 3 zones (thirds along y)
+# -----------------------------------------------------------------------------
+
+[[panel]]
+tag = "zone-right-top"
+edge = "right"
+zone = "start"
+size = 340
+snap_threshold = 0.4
+bg_color = "rgba(80, 220, 200, 0.95)"
+label = "Right · Top"
+
+[[panel]]
+tag = "zone-right-center"
+edge = "right"
+zone = "center"
+size = 340
+snap_threshold = 0.4
+bg_color = "rgba(180, 220, 80, 0.95)"
+label = "Right · Center"
+
+[[panel]]
+tag = "zone-right-bottom"
+edge = "right"
+zone = "end"
+size = 340
+snap_threshold = 0.4
+bg_color = "rgba(250, 120, 60, 0.95)"
+label = "Right · Bottom"

@@ -18,6 +18,23 @@ pub enum Edge {
     Bottom,
 }
 
+/// Which portion of the edge a panel occupies.
+///
+/// `Full` is the legacy behavior — the panel stretches the whole length of
+/// its edge. The thirds (`Start`, `Center`, `End`) correspond to niri's
+/// `TouchEdge<Edge>:<Zone>` triggers: for Top/Bottom edges, thirds split
+/// along x (Start = leftmost, End = rightmost); for Left/Right edges, thirds
+/// split along y (Start = topmost, End = bottommost).
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Zone {
+    #[default]
+    Full,
+    Start,
+    Center,
+    End,
+}
+
 /// Which layer-shell layer the panel renders on.
 #[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -52,6 +69,15 @@ pub struct PanelConfig {
 
     /// Which edge of the screen this panel slides from.
     pub edge: Edge,
+
+    /// Which third of the edge this panel occupies. `Full` (the default)
+    /// stretches the panel across the whole edge like the original
+    /// sidebar behavior. `Start`/`Center`/`End` constrain it to one of
+    /// three equal zones along the perpendicular axis — pair with a
+    /// zoned trigger tag like `TouchEdgeTop:Left` to build per-corner
+    /// drawers.
+    #[serde(default)]
+    pub zone: Zone,
 
     /// Size of the panel in pixels (width for left/right, height for top/bottom).
     #[serde(default = "default_size")]
@@ -129,6 +155,7 @@ impl Config {
                 PanelConfig {
                     tag: "sidebar-left".to_string(),
                     edge: Edge::Left,
+                    zone: Zone::Full,
                     size: 400,
                     snap_threshold: 0.4,
                     bg_color: "rgba(40, 100, 220, 0.95)".to_string(),
@@ -142,6 +169,7 @@ impl Config {
                 PanelConfig {
                     tag: "sidebar-right".to_string(),
                     edge: Edge::Right,
+                    zone: Zone::Full,
                     size: 400,
                     snap_threshold: 0.5,
                     bg_color: "rgba(220, 50, 50, 0.95)".to_string(),

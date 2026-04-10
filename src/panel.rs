@@ -2,10 +2,154 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
-use gtk4::{self as gtk, glib};
+use gtk4::{self as gtk, gdk, glib};
 use gtk4_layer_shell::{Edge as LayerEdge, KeyboardMode, Layer, LayerShell};
 
-use crate::config::{Edge, LayerConfig, PanelConfig, PanelStyle};
+use crate::config::{Edge, LayerConfig, PanelConfig, PanelStyle, Zone};
+
+/// Build a unique CSS class name from a panel tag.
+///
+/// Each panel registers its own CSS provider at display scope. Without a
+/// per-panel selector, every provider's `window { background-color: ... }`
+/// rule would match every panel's window, and the last one loaded would
+/// win — every drawer ending up the same color. Scoping the selector to
+/// `window.<class>` makes each rule apply only to its own panel.
+///
+/// Sanitizes the tag to CSS-identifier-safe characters (`[a-zA-Z0-9-]`)
+/// and prefixes with `panel-` so it's guaranteed to start with a letter.
+fn css_class_for_tag(tag: &str) -> String {
+    let sanitized: String = tag
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .collect();
+    format!("panel-{sanitized}")
+}
+
+/// Query the primary output's geometry so we can compute zone sizes.
+///
+/// Layer-shell panels don't always know which output they'll land on, and
+/// GTK's monitor list can be empty during early window construction on some
+/// compositors. Fall back to a 1920x1080 default in that case — the panel
+/// will still render, just sized for a "typical" display.
+fn primary_monitor_size() -> (i32, i32) {
+    gdk::Display::default()
+        .and_then(|d| d.monitors().item(0))
+        .and_downcast::<gdk::Monitor>()
+        .map(|m| {
+            let g = m.geometry();
+            (g.width(), g.height())
+        })
+        .unwrap_or((1920, 1080))
+}
+
+/// How big the panel is along the edge it's anchored to (parallel axis).
+///
+/// For Top/Bottom edges that's width; for Left/Right edges that's height.
+/// `Full` returns the whole monitor extent; thirds return `extent / 3`.
+fn parallel_extent(edge: Edge, zone: Zone, mon_w: i32, mon_h: i32) -> i32 {
+    let extent = match edge {
+        Edge::Top | Edge::Bottom => mon_w,
+        Edge::Left | Edge::Right => mon_h,
+    };
+    match zone {
+        Zone::Full => extent,
+        Zone::Start | Zone::Center | Zone::End => extent / 3,
+    }
+}
+
+/// Which corner to anchor a zoned panel to.
+///
+/// For Start zones, anchor to the "low" end of the parallel axis
+/// (Top for horizontal edges, Left for vertical edges). For End zones,
+/// anchor to the "high" end. Center anchors to the same corner as Start
+/// but is then pushed inward by `extent/3` via a parallel-axis margin.
+/// `Full` doesn't use this — it anchors both parallel sides.
+///
+/// Returns a tuple of (primary_edge, secondary_edge) where primary is the
+/// panel's own edge and secondary is the parallel-axis anchor.
+fn zoned_anchor_corner(edge: Edge, zone: Zone) -> (LayerEdge, LayerEdge) {
+    let primary = match edge {
+        Edge::Left => LayerEdge::Left,
+        Edge::Right => LayerEdge::Right,
+        Edge::Top => LayerEdge::Top,
+        Edge::Bottom => LayerEdge::Bottom,
+    };
+    let secondary_low = match edge {
+        Edge::Top | Edge::Bottom => LayerEdge::Left,
+        Edge::Left | Edge::Right => LayerEdge::Top,
+    };
+    let secondary_high = match edge {
+        Edge::Top | Edge::Bottom => LayerEdge::Right,
+        Edge::Left | Edge::Right => LayerEdge::Bottom,
+    };
+    let secondary = match zone {
+        Zone::Start | Zone::Center | Zone::Full => secondary_low,
+        Zone::End => secondary_high,
+    };
+    (primary, secondary)
+}
+
+/// Apply the anchor + margin layout for a zoned panel.
+///
+/// This covers everything *except* the perpendicular hide-margin on the
+/// primary edge (that's the slide animation's job). It sets:
+///  - the primary edge anchor (always on)
+///  - one parallel-axis anchor for Start/Center/End (both for Full)
+///  - a parallel-axis margin for Center zones to push them into the middle
+///
+/// Must be called before the hide-margin is applied so the two don't
+/// overwrite each other.
+fn apply_zoned_anchors(
+    window: &gtk::Window,
+    edge: Edge,
+    zone: Zone,
+    parallel_offset: i32,
+) {
+    // Clear all anchors first — we'll turn on exactly the ones we want.
+    window.set_anchor(LayerEdge::Left, false);
+    window.set_anchor(LayerEdge::Right, false);
+    window.set_anchor(LayerEdge::Top, false);
+    window.set_anchor(LayerEdge::Bottom, false);
+
+    match zone {
+        Zone::Full => {
+            // Anchor to the primary edge and stretch between both parallel
+            // edges — the original full-width behavior.
+            match edge {
+                Edge::Left => {
+                    window.set_anchor(LayerEdge::Left, true);
+                    window.set_anchor(LayerEdge::Top, true);
+                    window.set_anchor(LayerEdge::Bottom, true);
+                }
+                Edge::Right => {
+                    window.set_anchor(LayerEdge::Right, true);
+                    window.set_anchor(LayerEdge::Top, true);
+                    window.set_anchor(LayerEdge::Bottom, true);
+                }
+                Edge::Top => {
+                    window.set_anchor(LayerEdge::Top, true);
+                    window.set_anchor(LayerEdge::Left, true);
+                    window.set_anchor(LayerEdge::Right, true);
+                }
+                Edge::Bottom => {
+                    window.set_anchor(LayerEdge::Bottom, true);
+                    window.set_anchor(LayerEdge::Left, true);
+                    window.set_anchor(LayerEdge::Right, true);
+                }
+            }
+        }
+        Zone::Start | Zone::Center | Zone::End => {
+            let (primary, secondary) = zoned_anchor_corner(edge, zone);
+            window.set_anchor(primary, true);
+            window.set_anchor(secondary, true);
+            // Center pushes the panel off its corner by one-third of the
+            // parallel axis, via a margin on the same anchored parallel side.
+            if zone == Zone::Center {
+                window.set_margin(secondary, parallel_offset);
+            }
+        }
+    }
+}
 
 /// Runtime state for a single panel.
 pub struct Panel {
@@ -49,47 +193,32 @@ impl Panel {
     }
 
     fn new_drawer(config: &PanelConfig, app: &gtk::Application) -> Self {
+        // Compute the panel's along-edge extent from monitor geometry and
+        // the zone. Full zones stretch the whole edge; thirds get 1/3 the
+        // monitor's parallel dimension. Perpendicular extent is always
+        // `config.size` — the zone only affects the parallel axis.
+        let (mon_w, mon_h) = primary_monitor_size();
+        let parallel = parallel_extent(config.edge, config.zone, mon_w, mon_h);
+        let parallel_offset = match config.edge {
+            Edge::Top | Edge::Bottom => mon_w / 3,
+            Edge::Left | Edge::Right => mon_h / 3,
+        };
+
         let window = gtk::Window::builder()
             .application(app)
             .default_width(match config.edge {
                 Edge::Left | Edge::Right => config.size,
-                Edge::Top | Edge::Bottom => 1,
+                Edge::Top | Edge::Bottom => parallel,
             })
             .default_height(match config.edge {
-                Edge::Left | Edge::Right => 1,
+                Edge::Left | Edge::Right => parallel,
                 Edge::Top | Edge::Bottom => config.size,
             })
             .build();
 
         Self::init_layer_shell_common(&window, config);
 
-        // Anchor to the panel's edge + stretch along that edge
-        match config.edge {
-            Edge::Left => {
-                window.set_anchor(LayerEdge::Left, true);
-                window.set_anchor(LayerEdge::Top, true);
-                window.set_anchor(LayerEdge::Bottom, true);
-                window.set_anchor(LayerEdge::Right, false);
-            }
-            Edge::Right => {
-                window.set_anchor(LayerEdge::Right, true);
-                window.set_anchor(LayerEdge::Top, true);
-                window.set_anchor(LayerEdge::Bottom, true);
-                window.set_anchor(LayerEdge::Left, false);
-            }
-            Edge::Top => {
-                window.set_anchor(LayerEdge::Top, true);
-                window.set_anchor(LayerEdge::Left, true);
-                window.set_anchor(LayerEdge::Right, true);
-                window.set_anchor(LayerEdge::Bottom, false);
-            }
-            Edge::Bottom => {
-                window.set_anchor(LayerEdge::Bottom, true);
-                window.set_anchor(LayerEdge::Left, true);
-                window.set_anchor(LayerEdge::Right, true);
-                window.set_anchor(LayerEdge::Top, false);
-            }
-        }
+        apply_zoned_anchors(&window, config.edge, config.zone, parallel_offset);
 
         // Set margin to hide the panel initially
         let initial_reveal = if config.start_open { 1.0 } else { 0.0 };
@@ -124,11 +253,16 @@ impl Panel {
 
         window.set_child(Some(&vbox));
 
+        // Scope CSS to this panel's own class so its background color
+        // doesn't bleed into the other 11 drawers. See css_class_for_tag.
+        let class_name = css_class_for_tag(&config.tag);
+        window.add_css_class(&class_name);
         let css = format!(
-            "window {{ background-color: {}; }} \
-             .panel-label {{ font-size: 18px; font-weight: bold; color: white; }} \
-             .panel-info {{ font-size: 14px; color: rgba(255,255,255,0.7); }}",
-            config.bg_color
+            "window.{cls} {{ background-color: {}; }} \
+             window.{cls} .panel-label {{ font-size: 18px; font-weight: bold; color: white; }} \
+             window.{cls} .panel-info {{ font-size: 14px; color: rgba(255,255,255,0.7); }}",
+            config.bg_color,
+            cls = class_name,
         );
         let provider = gtk::CssProvider::new();
         provider.load_from_data(&css);
@@ -218,41 +352,31 @@ impl Panel {
     fn new_bar(config: &PanelConfig, app: &gtk::Application) -> Self {
         let bar_h = config.bar_height;
 
+        // Same zone geometry as drawer: thirds split the parallel axis,
+        // Center gets an offset margin to push it inward. Bars only have
+        // `bar_height` as their perpendicular extent (not `size`).
+        let (mon_w, mon_h) = primary_monitor_size();
+        let parallel = parallel_extent(config.edge, config.zone, mon_w, mon_h);
+        let parallel_offset = match config.edge {
+            Edge::Top | Edge::Bottom => mon_w / 3,
+            Edge::Left | Edge::Right => mon_h / 3,
+        };
+
         let window = gtk::Window::builder()
             .application(app)
-            .default_width(1)   // stretch via anchors
-            .default_height(bar_h)
+            .default_width(match config.edge {
+                Edge::Left | Edge::Right => bar_h,
+                Edge::Top | Edge::Bottom => parallel,
+            })
+            .default_height(match config.edge {
+                Edge::Left | Edge::Right => parallel,
+                Edge::Top | Edge::Bottom => bar_h,
+            })
             .build();
 
         Self::init_layer_shell_common(&window, config);
 
-        // Bar anchors to chosen edge + stretches horizontally
-        match config.edge {
-            Edge::Top => {
-                window.set_anchor(LayerEdge::Top, true);
-                window.set_anchor(LayerEdge::Left, true);
-                window.set_anchor(LayerEdge::Right, true);
-                window.set_anchor(LayerEdge::Bottom, false);
-            }
-            Edge::Bottom => {
-                window.set_anchor(LayerEdge::Bottom, true);
-                window.set_anchor(LayerEdge::Left, true);
-                window.set_anchor(LayerEdge::Right, true);
-                window.set_anchor(LayerEdge::Top, false);
-            }
-            Edge::Left => {
-                window.set_anchor(LayerEdge::Left, true);
-                window.set_anchor(LayerEdge::Top, true);
-                window.set_anchor(LayerEdge::Bottom, true);
-                window.set_anchor(LayerEdge::Right, false);
-            }
-            Edge::Right => {
-                window.set_anchor(LayerEdge::Right, true);
-                window.set_anchor(LayerEdge::Top, true);
-                window.set_anchor(LayerEdge::Bottom, true);
-                window.set_anchor(LayerEdge::Left, false);
-            }
-        }
+        apply_zoned_anchors(&window, config.edge, config.zone, parallel_offset);
 
         // Build bar content: [label] [===progress===] [percentage]
         let label_text = config
@@ -285,14 +409,18 @@ impl Panel {
 
         window.set_child(Some(&hbox));
 
-        // CSS
+        // Scope CSS to this bar's own class so its background color
+        // doesn't bleed into other panels. See css_class_for_tag.
+        let class_name = css_class_for_tag(&config.tag);
+        window.add_css_class(&class_name);
         let css = format!(
-            "window {{ background-color: {}; }} \
-             .bar-label {{ font-size: 14px; font-weight: bold; color: white; }} \
-             .bar-pct {{ font-size: 14px; font-weight: bold; color: white; font-family: monospace; }} \
-             progressbar trough {{ min-height: 14px; background-color: rgba(0,0,0,0.3); border-radius: 7px; }} \
-             progressbar progress {{ min-height: 14px; background-color: rgba(255,255,255,0.9); border-radius: 7px; }}",
-            config.bg_color
+            "window.{cls} {{ background-color: {}; }} \
+             window.{cls} .bar-label {{ font-size: 14px; font-weight: bold; color: white; }} \
+             window.{cls} .bar-pct {{ font-size: 14px; font-weight: bold; color: white; font-family: monospace; }} \
+             window.{cls} progressbar trough {{ min-height: 14px; background-color: rgba(0,0,0,0.3); border-radius: 7px; }} \
+             window.{cls} progressbar progress {{ min-height: 14px; background-color: rgba(255,255,255,0.9); border-radius: 7px; }}",
+            config.bg_color,
+            cls = class_name,
         );
         let provider = gtk::CssProvider::new();
         provider.load_from_data(&css);
