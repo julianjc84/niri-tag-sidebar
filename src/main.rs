@@ -100,11 +100,18 @@ fn build_ui(app: &gtk::Application, config: &Config) {
     // Start IPC listener
     let rx = spawn_ipc_listener(tags);
 
-    // Poll the IPC channel from the GTK main loop (~120Hz to match gesture update rate)
+    // Poll the IPC channel and drag-to-dismiss signals from the GTK main loop
     let panels_clone = panels.clone();
     glib::timeout_add_local(std::time::Duration::from_millis(8), move || {
         while let Ok(msg) = rx.try_recv() {
             handle_gesture_msg(&panels_clone, msg);
+        }
+        // Check for pending drag-to-dismiss snaps.
+        for panel in panels_clone.borrow_mut().values_mut() {
+            if let Some(should_open) = panel.drag_snap_pending.take() {
+                panel.is_open = should_open;
+                panel.animate_to_target();
+            }
         }
         glib::ControlFlow::Continue
     });
@@ -165,7 +172,7 @@ fn handle_gesture_msg(panels: &Rc<RefCell<HashMap<String, Panel>>>, msg: Gesture
                 tag, progress
             );
             if let Some(panel) = panels.get_mut(&tag) {
-                if panel.gesture_active {
+                if panel.gesture_active && !panel.drag_active.get() {
                     // Map progress to reveal.
                     // If panel is currently open, invert so the gesture closes it.
                     let reveal = if panel.is_open {

@@ -18,6 +18,11 @@ pub struct Panel {
     pub is_open: bool,
     /// Whether a gesture is actively driving this panel.
     pub gesture_active: bool,
+    /// Whether a local GTK drag is actively closing this panel.
+    pub drag_active: Rc<Cell<bool>>,
+    /// Pending snap from drag-to-dismiss: Some(true) = snap open, Some(false) = snap closed.
+    /// Consumed by the main loop poll.
+    pub drag_snap_pending: Rc<Cell<Option<bool>>>,
     /// Animation tick callback ID (if animating).
     pub tick_id: Option<gtk::TickCallbackId>,
 }
@@ -137,12 +142,75 @@ impl Panel {
             window.present();
         }
 
+        let reveal = Rc::new(Cell::new(initial_reveal));
+        let drag_active = Rc::new(Cell::new(false));
+
+        // Attach drag-to-dismiss gesture for closing the drawer by swiping back.
+        let drag = gtk::GestureDrag::new();
+        drag.set_touch_only(true);
+        {
+            let drag_active = drag_active.clone();
+            drag.connect_drag_begin(move |_, _, _| {
+                drag_active.set(true);
+                eprintln!("[drag] BEGIN — local drag-to-dismiss started");
+            });
+        }
+        {
+            let reveal = reveal.clone();
+            let edge = config.edge;
+            let size = config.size;
+            let window_ref = window.clone();
+            drag.connect_drag_update(move |_, offset_x, offset_y| {
+                // Map drag offset to reveal reduction.
+                // Dragging toward the panel's edge = closing.
+                let drag_distance = match edge {
+                    Edge::Left => -offset_x,   // drag left to close
+                    Edge::Right => offset_x,    // drag right to close
+                    Edge::Top => -offset_y,     // drag up to close
+                    Edge::Bottom => offset_y,   // drag down to close
+                };
+                let delta = drag_distance / size as f64;
+                let new_reveal = (1.0 - delta).clamp(0.0, 1.0);
+                reveal.set(new_reveal);
+
+                let margin = ((1.0 - new_reveal) * -(size as f64)) as i32;
+                match edge {
+                    Edge::Left => window_ref.set_margin(LayerEdge::Left, margin),
+                    Edge::Right => window_ref.set_margin(LayerEdge::Right, margin),
+                    Edge::Top => window_ref.set_margin(LayerEdge::Top, margin),
+                    Edge::Bottom => window_ref.set_margin(LayerEdge::Bottom, margin),
+                }
+                update_info(&window_ref, new_reveal);
+            });
+        }
+        let drag_snap_pending = Rc::new(Cell::new(None));
+        {
+            let drag_active = drag_active.clone();
+            let reveal = reveal.clone();
+            let snap_threshold = config.snap_threshold;
+            let drag_snap_pending = drag_snap_pending.clone();
+            drag.connect_drag_end(move |_, _, _| {
+                drag_active.set(false);
+                let current = reveal.get();
+                let should_open = current >= snap_threshold;
+                eprintln!(
+                    "[drag] END — reveal={:.3} threshold={:.2} → {}",
+                    current, snap_threshold,
+                    if should_open { "OPEN" } else { "CLOSED" },
+                );
+                drag_snap_pending.set(Some(should_open));
+            });
+        }
+        window.add_controller(drag);
+
         Panel {
             config: config.clone(),
             window,
-            reveal: Rc::new(Cell::new(initial_reveal)),
+            reveal,
             is_open: config.start_open,
             gesture_active: false,
+            drag_active,
+            drag_snap_pending,
             tick_id: None,
         }
     }
@@ -243,6 +311,8 @@ impl Panel {
             reveal: Rc::new(Cell::new(0.0)),
             is_open: false,
             gesture_active: false,
+            drag_active: Rc::new(Cell::new(false)),
+            drag_snap_pending: Rc::new(Cell::new(None)),
             tick_id: None,
         }
     }
