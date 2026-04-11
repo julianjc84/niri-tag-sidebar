@@ -1,27 +1,19 @@
 # niri-tag-sidebar sample configuration
 #
-# Each [[panel]] defines a slide-out drawer bound to a gesture tag.
-# The tag must match a `tag="..."` property on a gesture bind in your niri config.
+# Each [[panel]] defines a slide-out drawer or progress bar bound to
+# a niri gesture tag. The `tag` must match a `tag="..."` property on
+# a gesture bind in your niri config — the sidebar subscribes to that
+# tag's GestureBegin/Progress/End events and animates accordingly.
 #
-# This sample demonstrates the edge-zone feature — each of niri's four
-# touchscreen edges is split into three zones (thirds along the
-# perpendicular axis), and every zone gets its own differently-colored
-# drawer that occupies only that third of the screen.
-#
-# Matching niri config (in your binds block):
-#
-#   TouchEdgeTop:Left      tag="zone-top-left"      { noop; }
-#   TouchEdgeTop:Center    tag="zone-top-center"    { noop; }
-#   TouchEdgeTop:Right     tag="zone-top-right"     { noop; }
-#   TouchEdgeBottom:Left   tag="zone-bottom-left"   { noop; }
-#   TouchEdgeBottom:Center tag="zone-bottom-center" { noop; }
-#   TouchEdgeBottom:Right  tag="zone-bottom-right"  { noop; }
-#   TouchEdgeLeft:Top      tag="zone-left-top"      { noop; }
-#   TouchEdgeLeft:Center   tag="zone-left-center"   { noop; }
-#   TouchEdgeLeft:Bottom   tag="zone-left-bottom"   { noop; }
-#   TouchEdgeRight:Top     tag="zone-right-top"     { noop; }
-#   TouchEdgeRight:Center  tag="zone-right-center"  { noop; }
-#   TouchEdgeRight:Bottom  tag="zone-right-bottom"  { noop; }
+# This sample is three demos in one:
+#   1. Full-edge sidebar drawers (4 panels, one per edge) — typical
+#      "swipe in from the edge" drawer UX.
+#   2. Progress bar overlays (2 panels) — thin bars that appear during
+#      active gestures and show real-time progress. Good for workspace/
+#      column navigation feedback.
+#   3. Edge-zone drawers (12 panels) — each edge split into three zones,
+#      each zone opening its own small drawer. Demonstrates the
+#      `TouchEdge edge="..." zone="..."` recognition.
 #
 # Available settings per panel:
 #   tag            - gesture tag to listen for (required)
@@ -37,6 +29,124 @@
 #   exclusive_zone - pixels to reserve, 0 = overlay (default: 0)
 #   layer          - "overlay" (above bars), "top" (same as bars),
 #                    "bottom", "background" (default: "overlay")
+#   style          - "drawer" (default, full slide-out) or "bar"
+#                    (thin progress indicator that only shows during
+#                    active gestures)
+#   bar_height     - for style="bar" only: height in pixels (default: 40)
+
+# =============================================================================
+# 1. Full-edge sidebar drawers
+# =============================================================================
+#
+# Matching niri config (touchscreen-gestures.kdl or your main binds block):
+#
+#   Mod+TouchEdge edge="left"   tag="sidebar-left"   { noop; }
+#   Mod+TouchEdge edge="right"  tag="sidebar-right"  { noop; }
+#   Mod+TouchEdge edge="top"    tag="sidebar-top"    { noop; }
+#   Mod+TouchEdge edge="bottom" tag="sidebar-bottom" { noop; }
+#
+# Pair with any other gesture you like — these are just the conventional
+# "edge swipe with Mod held" binds. Drop Mod+ for a plain edge swipe.
+
+[[panel]]
+tag = "sidebar-left"
+edge = "left"
+size = 400
+snap_threshold = 0.4
+bg_color = "rgba(40, 100, 220, 0.95)"
+label = "Navigation"
+layer = "overlay"
+
+[[panel]]
+tag = "sidebar-right"
+edge = "right"
+size = 400
+snap_threshold = 0.5
+bg_color = "rgba(220, 50, 50, 0.95)"
+label = "Quick Settings"
+layer = "overlay"
+
+[[panel]]
+tag = "sidebar-top"
+edge = "top"
+size = 250
+snap_threshold = 0.3
+bg_color = "rgba(50, 180, 80, 0.95)"
+label = "Notifications"
+layer = "overlay"
+
+[[panel]]
+tag = "sidebar-bottom"
+edge = "bottom"
+size = 300
+snap_threshold = 0.6
+bg_color = "rgba(220, 170, 30, 0.95)"
+label = "Media Controls"
+layer = "overlay"
+
+# =============================================================================
+# 2. Progress bar overlays
+# =============================================================================
+#
+# `style = "bar"` panels are thin progress indicators that only render
+# while a gesture is in progress, then auto-hide. They're perfect for
+# "what did niri just commit to?" feedback on continuous gestures like
+# workspace and column navigation.
+#
+# Matching niri config — tag the continuous-action binds so the bar
+# tracks their progress:
+#
+#   TouchSwipe    fingers=3 direction="up"    tag="ws-nav"  { focus-workspace-up; }
+#   TouchSwipe    fingers=3 direction="down"  tag="ws-nav"  { focus-workspace-down; }
+#   TouchSwipe    fingers=3 direction="left"  tag="col-nav" { focus-column-right; }
+#   TouchSwipe    fingers=3 direction="right" tag="col-nav" { focus-column-left; }
+#
+#   TouchpadSwipe fingers=3 direction="up"    tag="ws-nav"  { focus-workspace-up; }
+#   TouchpadSwipe fingers=3 direction="down"  tag="ws-nav"  { focus-workspace-down; }
+#   TouchpadSwipe fingers=3 direction="left"  tag="col-nav" { focus-column-right; }
+#   TouchpadSwipe fingers=3 direction="right" tag="col-nav" { focus-column-left; }
+
+# Progress bar — shows real-time gesture progress for workspace navigation
+[[panel]]
+tag = "ws-nav"
+edge = "bottom"
+style = "bar"
+bar_height = 40
+bg_color = "rgba(100, 60, 200, 0.90)"
+label = "Workspace"
+layer = "overlay"
+
+# Progress bar — shows real-time gesture progress for column navigation
+[[panel]]
+tag = "col-nav"
+edge = "bottom"
+style = "bar"
+bar_height = 40
+bg_color = "rgba(200, 120, 40, 0.90)"
+label = "Column"
+layer = "overlay"
+
+# =============================================================================
+# 3. Edge-zone drawers — 12 colored panels, one per (edge, zone) pair
+# =============================================================================
+#
+# Each drawer occupies only one third of its edge. Mod+edge-swipe in the
+# corresponding zone opens its panel.
+#
+# Matching niri config:
+#
+#   Mod+TouchEdge edge="top"    zone="left"   tag="zone-top-left"      { noop; }
+#   Mod+TouchEdge edge="top"    zone="center" tag="zone-top-center"    { noop; }
+#   Mod+TouchEdge edge="top"    zone="right"  tag="zone-top-right"     { noop; }
+#   Mod+TouchEdge edge="bottom" zone="left"   tag="zone-bottom-left"   { noop; }
+#   Mod+TouchEdge edge="bottom" zone="center" tag="zone-bottom-center" { noop; }
+#   Mod+TouchEdge edge="bottom" zone="right"  tag="zone-bottom-right"  { noop; }
+#   Mod+TouchEdge edge="left"   zone="top"    tag="zone-left-top"      { noop; }
+#   Mod+TouchEdge edge="left"   zone="center" tag="zone-left-center"   { noop; }
+#   Mod+TouchEdge edge="left"   zone="bottom" tag="zone-left-bottom"   { noop; }
+#   Mod+TouchEdge edge="right"  zone="top"    tag="zone-right-top"     { noop; }
+#   Mod+TouchEdge edge="right"  zone="center" tag="zone-right-center"  { noop; }
+#   Mod+TouchEdge edge="right"  zone="bottom" tag="zone-right-bottom"  { noop; }
 
 # -----------------------------------------------------------------------------
 # Top edge — 3 zones (thirds along x)
