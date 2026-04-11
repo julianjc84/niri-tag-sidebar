@@ -19,8 +19,10 @@ pub enum Event {
     GestureProgress {
         tag: String,
         progress: f64,
-        delta_x: f64,
-        delta_y: f64,
+        /// Typed physical delta (Swipe { dx, dy } / Pinch { d_spread } /
+        /// Rotate { d_radians }). niri-tag-sidebar only reads `progress`,
+        /// so we parse it as a raw value and never inspect it.
+        delta: serde_json::Value,
         timestamp_ms: u32,
     },
     GestureEnd {
@@ -42,8 +44,6 @@ pub enum GestureMsg {
     Progress {
         tag: String,
         progress: f64,
-        delta_x: f64,
-        delta_y: f64,
     },
     End {
         tag: String,
@@ -150,8 +150,6 @@ fn ipc_thread(tx: &mpsc::Sender<GestureMsg>, tags: &[String]) -> Result<(), Stri
             Some(GestureMsg::Progress {
                 tag,
                 progress: data["progress"].as_f64().unwrap_or(0.0),
-                delta_x: data["delta_x"].as_f64().unwrap_or(0.0),
-                delta_y: data["delta_y"].as_f64().unwrap_or(0.0),
             })
         } else if let Some(data) = map.get("GestureEnd") {
             let tag = data["tag"].as_str().unwrap_or("").to_string();

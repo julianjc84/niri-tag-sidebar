@@ -161,12 +161,7 @@ fn handle_gesture_msg(panels: &Rc<RefCell<HashMap<String, Panel>>>, msg: Gesture
                 }
             }
         }
-        GestureMsg::Progress {
-            tag,
-            progress,
-            delta_x: _,
-            delta_y: _,
-        } => {
+        GestureMsg::Progress { tag, progress } => {
             eprintln!(
                 "[gesture] PROGRESS tag={} progress={:.3}",
                 tag, progress
