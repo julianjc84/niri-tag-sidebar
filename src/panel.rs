@@ -20,7 +20,13 @@ use crate::config::{Edge, LayerConfig, PanelConfig, PanelStyle, Zone};
 fn css_class_for_tag(tag: &str) -> String {
     let sanitized: String = tag
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     format!("panel-{sanitized}")
 }
@@ -99,12 +105,7 @@ fn zoned_anchor_corner(edge: Edge, zone: Zone) -> (LayerEdge, LayerEdge) {
 ///
 /// Must be called before the hide-margin is applied so the two don't
 /// overwrite each other.
-fn apply_zoned_anchors(
-    window: &gtk::Window,
-    edge: Edge,
-    zone: Zone,
-    parallel_offset: i32,
-) {
+fn apply_zoned_anchors(window: &gtk::Window, edge: Edge, zone: Zone, parallel_offset: i32) {
     // Clear all anchors first — we'll turn on exactly the ones we want.
     window.set_anchor(LayerEdge::Left, false);
     window.set_anchor(LayerEdge::Right, false);
@@ -298,10 +299,10 @@ impl Panel {
                 // Map drag offset to reveal reduction.
                 // Dragging toward the panel's edge = closing.
                 let drag_distance = match edge {
-                    Edge::Left => -offset_x,   // drag left to close
-                    Edge::Right => offset_x,    // drag right to close
-                    Edge::Top => -offset_y,     // drag up to close
-                    Edge::Bottom => offset_y,   // drag down to close
+                    Edge::Left => -offset_x,  // drag left to close
+                    Edge::Right => offset_x,  // drag right to close
+                    Edge::Top => -offset_y,   // drag up to close
+                    Edge::Bottom => offset_y, // drag down to close
                 };
                 let delta = drag_distance / size as f64;
                 let new_reveal = (1.0 - delta).clamp(0.0, 1.0);
@@ -329,7 +330,8 @@ impl Panel {
                 let should_open = current >= snap_threshold;
                 eprintln!(
                     "[drag] END — reveal={:.3} threshold={:.2} → {}",
-                    current, snap_threshold,
+                    current,
+                    snap_threshold,
                     if should_open { "OPEN" } else { "CLOSED" },
                 );
                 drag_snap_pending.set(Some(should_open));
@@ -379,10 +381,7 @@ impl Panel {
         apply_zoned_anchors(&window, config.edge, config.zone, parallel_offset);
 
         // Build bar content: [label] [===progress===] [percentage]
-        let label_text = config
-            .label
-            .clone()
-            .unwrap_or_else(|| config.tag.clone());
+        let label_text = config.label.clone().unwrap_or_else(|| config.tag.clone());
 
         let label = gtk::Label::new(Some(&label_text));
         label.add_css_class("bar-label");
@@ -589,39 +588,37 @@ impl Panel {
 }
 
 fn update_info(window: &gtk::Window, reveal: f64) {
-    if let Some(child) = window.child() {
-        if let Some(vbox) = child.downcast_ref::<gtk::Box>() {
-            if let Some(widget) = vbox.last_child() {
-                if let Some(label) = widget.downcast_ref::<gtk::Label>() {
-                    label.set_text(&format!("Reveal: {:.0}%", reveal * 100.0));
-                }
-            }
-        }
+    if let Some(child) = window.child()
+        && let Some(vbox) = child.downcast_ref::<gtk::Box>()
+        && let Some(widget) = vbox.last_child()
+        && let Some(label) = widget.downcast_ref::<gtk::Label>()
+    {
+        label.set_text(&format!("Reveal: {:.0}%", reveal * 100.0));
     }
 }
 
 fn update_bar(window: &gtk::Window, progress: f64) {
-    if let Some(child) = window.child() {
-        if let Some(hbox) = child.downcast_ref::<gtk::Box>() {
-            // Walk children: label, progress bar, percentage label
-            let mut child_widget = hbox.first_child();
-            // Skip the label
-            if let Some(ref w) = child_widget {
-                child_widget = w.next_sibling();
+    if let Some(child) = window.child()
+        && let Some(hbox) = child.downcast_ref::<gtk::Box>()
+    {
+        // Walk children: label, progress bar, percentage label
+        let mut child_widget = hbox.first_child();
+        // Skip the label
+        if let Some(ref w) = child_widget {
+            child_widget = w.next_sibling();
+        }
+        // Progress bar
+        if let Some(ref w) = child_widget {
+            if let Some(bar) = w.downcast_ref::<gtk::ProgressBar>() {
+                bar.set_fraction(progress.abs().clamp(0.0, 1.0));
             }
-            // Progress bar
-            if let Some(ref w) = child_widget {
-                if let Some(bar) = w.downcast_ref::<gtk::ProgressBar>() {
-                    bar.set_fraction(progress.abs().clamp(0.0, 1.0));
-                }
-                child_widget = w.next_sibling();
-            }
-            // Percentage label
-            if let Some(ref w) = child_widget {
-                if let Some(label) = w.downcast_ref::<gtk::Label>() {
-                    label.set_text(&format!("{:.0}%", progress.abs() * 100.0));
-                }
-            }
+            child_widget = w.next_sibling();
+        }
+        // Percentage label
+        if let Some(ref w) = child_widget
+            && let Some(label) = w.downcast_ref::<gtk::Label>()
+        {
+            label.set_text(&format!("{:.0}%", progress.abs() * 100.0));
         }
     }
 }

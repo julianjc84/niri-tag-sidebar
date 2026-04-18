@@ -1,5 +1,4 @@
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::sync::mpsc;
@@ -8,32 +7,22 @@ use std::sync::mpsc;
 /// Niri uses serde's default externally-tagged enum encoding, so JSON looks like:
 /// `{"GestureBegin": {"tag": "sidebar", "trigger": "TouchEdgeLeft", ...}}`
 #[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
 pub enum Event {
-    GestureBegin {
+    #[serde(rename = "GestureBegin")]
+    Begin {
         tag: String,
         trigger: String,
         finger_count: u8,
         is_continuous: bool,
     },
-    GestureProgress {
-        tag: String,
-        progress: f64,
-        /// Typed physical delta (Swipe { dx, dy } / Pinch { d_spread } /
-        /// Rotate { d_radians }). niri-tag-sidebar only reads `progress`,
-        /// so we parse it as a raw value and never inspect it.
-        delta: serde_json::Value,
-        timestamp_ms: u32,
-    },
-    GestureEnd {
-        tag: String,
-        completed: bool,
-    },
+    #[serde(rename = "GestureProgress")]
+    Progress { tag: String, progress: f64 },
+    #[serde(rename = "GestureEnd")]
+    End { tag: String, completed: bool },
 }
 
 /// Messages sent from the IPC thread to the GTK main loop.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum GestureMsg {
     Begin {
         tag: String,
@@ -66,7 +55,6 @@ enum Reply {
     Ok(()),
     Err(ReplyErr),
 }
-
 
 #[derive(Deserialize)]
 struct ReplyErr {
@@ -125,49 +113,36 @@ fn ipc_thread(tx: &mpsc::Sender<GestureMsg>, tags: &[String]) -> Result<(), Stri
         }
 
         // Subsequent lines are Events — try to parse as gesture events.
-        // Non-gesture events will fail to match any variant and that's fine.
-        let parsed: Result<HashMap<String, serde_json::Value>, _> =
-            serde_json::from_str(&line);
-
-        let Ok(map) = parsed else { continue };
-
-        let msg = if let Some(data) = map.get("GestureBegin") {
-            let tag = data["tag"].as_str().unwrap_or("").to_string();
-            if !tags.contains(&tag) {
-                continue;
-            }
-            Some(GestureMsg::Begin {
-                tag,
-                trigger: data["trigger"].as_str().unwrap_or("").to_string(),
-                finger_count: data["finger_count"].as_u64().unwrap_or(0) as u8,
-                is_continuous: data["is_continuous"].as_bool().unwrap_or(false),
-            })
-        } else if let Some(data) = map.get("GestureProgress") {
-            let tag = data["tag"].as_str().unwrap_or("").to_string();
-            if !tags.contains(&tag) {
-                continue;
-            }
-            Some(GestureMsg::Progress {
-                tag,
-                progress: data["progress"].as_f64().unwrap_or(0.0),
-            })
-        } else if let Some(data) = map.get("GestureEnd") {
-            let tag = data["tag"].as_str().unwrap_or("").to_string();
-            if !tags.contains(&tag) {
-                continue;
-            }
-            Some(GestureMsg::End {
-                tag,
-                completed: data["completed"].as_bool().unwrap_or(false),
-            })
-        } else {
-            None
+        // Non-gesture events won't match any variant and that's fine.
+        let Ok(event) = serde_json::from_str::<Event>(&line) else {
+            continue;
         };
 
-        if let Some(msg) = msg {
-            if tx.send(msg).is_err() {
-                return Ok(()); // Receiver dropped, app shutting down
-            }
+        let tag = match &event {
+            Event::Begin { tag, .. } | Event::Progress { tag, .. } | Event::End { tag, .. } => tag,
+        };
+        if !tags.contains(tag) {
+            continue;
+        }
+
+        let msg = match event {
+            Event::Begin {
+                tag,
+                trigger,
+                finger_count,
+                is_continuous,
+            } => GestureMsg::Begin {
+                tag,
+                trigger,
+                finger_count,
+                is_continuous,
+            },
+            Event::Progress { tag, progress } => GestureMsg::Progress { tag, progress },
+            Event::End { tag, completed } => GestureMsg::End { tag, completed },
+        };
+
+        if tx.send(msg).is_err() {
+            return Ok(()); // Receiver dropped, app shutting down
         }
     }
 

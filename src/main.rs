@@ -11,7 +11,7 @@ use gtk4::prelude::*;
 use gtk4::{self as gtk, glib};
 
 use config::{Config, PanelStyle};
-use ipc::{spawn_ipc_listener, GestureMsg};
+use ipc::{GestureMsg, spawn_ipc_listener};
 use panel::Panel;
 
 fn main() {
@@ -32,17 +32,17 @@ fn load_config() -> Config {
     // Check CLI args for --config <path>
     let args: Vec<String> = std::env::args().collect();
     for i in 0..args.len() {
-        if args[i] == "--config" || args[i] == "-c" {
-            if let Some(path) = args.get(i + 1) {
-                match Config::load(&PathBuf::from(path)) {
-                    Ok(c) => {
-                        eprintln!("[niri-tag-sidebar] Loaded config from {}", path);
-                        return c;
-                    }
-                    Err(e) => {
-                        eprintln!("[niri-tag-sidebar] {}", e);
-                        std::process::exit(1);
-                    }
+        if (args[i] == "--config" || args[i] == "-c")
+            && let Some(path) = args.get(i + 1)
+        {
+            match Config::load(&PathBuf::from(path)) {
+                Ok(c) => {
+                    eprintln!("[niri-tag-sidebar] Loaded config from {}", path);
+                    return c;
+                }
+                Err(e) => {
+                    eprintln!("[niri-tag-sidebar] {}", e);
+                    std::process::exit(1);
                 }
             }
         }
@@ -92,9 +92,7 @@ fn build_ui(app: &gtk::Application, config: &Config) {
 
     for panel_config in &config.panel {
         let panel = Panel::new(panel_config, app);
-        panels
-            .borrow_mut()
-            .insert(panel_config.tag.clone(), panel);
+        panels.borrow_mut().insert(panel_config.tag.clone(), panel);
     }
 
     // Start IPC listener
@@ -162,21 +160,19 @@ fn handle_gesture_msg(panels: &Rc<RefCell<HashMap<String, Panel>>>, msg: Gesture
             }
         }
         GestureMsg::Progress { tag, progress } => {
-            eprintln!(
-                "[gesture] PROGRESS tag={} progress={:.3}",
-                tag, progress
-            );
-            if let Some(panel) = panels.get_mut(&tag) {
-                if panel.gesture_active && !panel.drag_active.get() {
-                    // Map progress to reveal.
-                    // If panel is currently open, invert so the gesture closes it.
-                    let reveal = if panel.is_open {
-                        (1.0 - progress.abs()).clamp(0.0, 1.0)
-                    } else {
-                        progress.abs().clamp(0.0, 1.0)
-                    };
-                    panel.set_reveal(reveal);
-                }
+            eprintln!("[gesture] PROGRESS tag={} progress={:.3}", tag, progress);
+            if let Some(panel) = panels.get_mut(&tag)
+                && panel.gesture_active
+                && !panel.drag_active.get()
+            {
+                // Map progress to reveal.
+                // If panel is currently open, invert so the gesture closes it.
+                let reveal = if panel.is_open {
+                    (1.0 - progress.abs()).clamp(0.0, 1.0)
+                } else {
+                    progress.abs().clamp(0.0, 1.0)
+                };
+                panel.set_reveal(reveal);
             }
         }
         GestureMsg::End { tag, completed } => {
@@ -195,7 +191,9 @@ fn handle_gesture_msg(panels: &Rc<RefCell<HashMap<String, Panel>>>, msg: Gesture
                     panel.snap();
                     eprintln!(
                         "[gesture] SNAP tag={} reveal={:.3} threshold={:.2} → {}",
-                        tag, reveal_before, panel.config.snap_threshold,
+                        tag,
+                        reveal_before,
+                        panel.config.snap_threshold,
                         if panel.is_open { "OPEN" } else { "CLOSED" },
                     );
                     let target = if panel.is_open { 1.0 } else { 0.0 };
